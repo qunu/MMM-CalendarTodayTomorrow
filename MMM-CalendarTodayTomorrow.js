@@ -1,8 +1,8 @@
-/* global cloneObject */
-
 /* MagicMirror²
- * Module: Calendar
+ * Module: MMM-CalendarTodayTomorrow
+ * By Qunu
  *
+ * Based on the default Calendar module
  * By Michael Teeuw https://michaelteeuw.nl
  * MIT Licensed.
  */
