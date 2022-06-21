@@ -25,134 +25,134 @@ const https = require("https");
  * @class
  */
 const CalendarFetcher = function (url, reloadInterval, excludedEvents, maximumEntries, maximumNumberOfDays, auth, includePastEvents, selfSignedCert) {
-    let reloadTimer = null;
-    let events = [];
+	let reloadTimer = null;
+	let events = [];
 
-    let fetchFailedCallback = function () {};
-    let eventsReceivedCallback = function () {};
+	let fetchFailedCallback = function () {};
+	let eventsReceivedCallback = function () {};
 
-    /**
-     * Initiates calendar fetch.
-     */
-    const fetchCalendar = () => {
-        clearTimeout(reloadTimer);
-        reloadTimer = null;
-        const nodeVersion = Number(process.version.match(/^v(\d+\.\d+)/)[1]);
-        let fetcher = null;
-        let httpsAgent = null;
-        let headers = {
-            "User-Agent": "Mozilla/5.0 (Node.js " + nodeVersion + ") MagicMirror/" + global.version
-        };
+	/**
+	 * Initiates calendar fetch.
+	 */
+	const fetchCalendar = () => {
+		clearTimeout(reloadTimer);
+		reloadTimer = null;
+		const nodeVersion = Number(process.version.match(/^v(\d+\.\d+)/)[1]);
+		let fetcher = null;
+		let httpsAgent = null;
+		let headers = {
+			"User-Agent": "Mozilla/5.0 (Node.js " + nodeVersion + ") MagicMirror/" + global.version
+		};
 
-        if (selfSignedCert) {
-            httpsAgent = new https.Agent({
-                rejectUnauthorized: false
-            });
-        }
-        if (auth) {
-            if (auth.method === "bearer") {
-                headers.Authorization = "Bearer " + auth.pass;
-            } else if (auth.method === "digest") {
-                fetcher = new digest(auth.user, auth.pass).fetch(url, { headers: headers, agent: httpsAgent });
-            } else {
-                headers.Authorization = "Basic " + Buffer.from(auth.user + ":" + auth.pass).toString("base64");
-            }
-        }
-        if (fetcher === null) {
-            fetcher = fetch(url, { headers: headers, agent: httpsAgent });
-        }
+		if (selfSignedCert) {
+			httpsAgent = new https.Agent({
+				rejectUnauthorized: false
+			});
+		}
+		if (auth) {
+			if (auth.method === "bearer") {
+				headers.Authorization = "Bearer " + auth.pass;
+			} else if (auth.method === "digest") {
+				fetcher = new digest(auth.user, auth.pass).fetch(url, { headers: headers, agent: httpsAgent });
+			} else {
+				headers.Authorization = "Basic " + Buffer.from(auth.user + ":" + auth.pass).toString("base64");
+			}
+		}
+		if (fetcher === null) {
+			fetcher = fetch(url, { headers: headers, agent: httpsAgent });
+		}
 
-        fetcher
-            .then(NodeHelper.checkFetchStatus)
-            .then((response) => response.text())
-            .then((responseData) => {
-                let data = [];
+		fetcher
+			.then(NodeHelper.checkFetchStatus)
+			.then((response) => response.text())
+			.then((responseData) => {
+				let data = [];
 
-                try {
-                    data = ical.parseICS(responseData);
-                    Log.debug("parsed data=" + JSON.stringify(data));
-                    events = CalendarUtils.filterEvents(data, {
-                        excludedEvents,
-                        includePastEvents,
-                        maximumEntries,
-                        maximumNumberOfDays
-                    });
-                } catch (error) {
-                    fetchFailedCallback(this, error);
-                    scheduleTimer();
-                    return;
-                }
-                this.broadcastEvents();
-                scheduleTimer();
-            })
-            .catch((error) => {
-                fetchFailedCallback(this, error);
-                scheduleTimer();
-            });
-    };
+				try {
+					data = ical.parseICS(responseData);
+					Log.debug("parsed data=" + JSON.stringify(data));
+					events = CalendarUtils.filterEvents(data, {
+						excludedEvents,
+						includePastEvents,
+						maximumEntries,
+						maximumNumberOfDays
+					});
+				} catch (error) {
+					fetchFailedCallback(this, error);
+					scheduleTimer();
+					return;
+				}
+				this.broadcastEvents();
+				scheduleTimer();
+			})
+			.catch((error) => {
+				fetchFailedCallback(this, error);
+				scheduleTimer();
+			});
+	};
 
-    /**
-     * Schedule the timer for the next update.
-     */
-    const scheduleTimer = function () {
-        clearTimeout(reloadTimer);
-        reloadTimer = setTimeout(function () {
-            fetchCalendar();
-        }, reloadInterval);
-    };
+	/**
+	 * Schedule the timer for the next update.
+	 */
+	const scheduleTimer = function () {
+		clearTimeout(reloadTimer);
+		reloadTimer = setTimeout(function () {
+			fetchCalendar();
+		}, reloadInterval);
+	};
 
-    /* public methods */
+	/* public methods */
 
-    /**
-     * Initiate fetchCalendar();
-     */
-    this.startFetch = function () {
-        fetchCalendar();
-    };
+	/**
+	 * Initiate fetchCalendar();
+	 */
+	this.startFetch = function () {
+		fetchCalendar();
+	};
 
-    /**
-     * Broadcast the existing events.
-     */
-    this.broadcastEvents = function () {
-        Log.info("Calendar-Fetcher TodayTomorrow: Broadcasting " + events.length + " events.");
-        eventsReceivedCallback(this);
-    };
+	/**
+	 * Broadcast the existing events.
+	 */
+	this.broadcastEvents = function () {
+		Log.info("Calendar-Fetcher: Broadcasting " + events.length + " events.");
+		eventsReceivedCallback(this);
+	};
 
-    /**
-     * Sets the on success callback
-     *
-     * @param {Function} callback The on success callback.
-     */
-    this.onReceive = function (callback) {
-        eventsReceivedCallback = callback;
-    };
+	/**
+	 * Sets the on success callback
+	 *
+	 * @param {Function} callback The on success callback.
+	 */
+	this.onReceive = function (callback) {
+		eventsReceivedCallback = callback;
+	};
 
-    /**
-     * Sets the on error callback
-     *
-     * @param {Function} callback The on error callback.
-     */
-    this.onError = function (callback) {
-        fetchFailedCallback = callback;
-    };
+	/**
+	 * Sets the on error callback
+	 *
+	 * @param {Function} callback The on error callback.
+	 */
+	this.onError = function (callback) {
+		fetchFailedCallback = callback;
+	};
 
-    /**
-     * Returns the url of this fetcher.
-     *
-     * @returns {string} The url of this fetcher.
-     */
-    this.url = function () {
-        return url;
-    };
+	/**
+	 * Returns the url of this fetcher.
+	 *
+	 * @returns {string} The url of this fetcher.
+	 */
+	this.url = function () {
+		return url;
+	};
 
-    /**
-     * Returns current available events for this fetcher.
-     *
-     * @returns {object[]} The current available events for this fetcher.
-     */
-    this.events = function () {
-        return events;
-    };
+	/**
+	 * Returns current available events for this fetcher.
+	 *
+	 * @returns {object[]} The current available events for this fetcher.
+	 */
+	this.events = function () {
+		return events;
+	};
 };
 
 module.exports = CalendarFetcher;

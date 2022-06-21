@@ -1,80 +1,138 @@
-Module.register("MMM-CalendarTodayTomorrow",{
-	// Default module config.
+/* global cloneObject */
+
+/* MagicMirror²
+ * Module: Calendar
+ *
+ * By Michael Teeuw https://michaelteeuw.nl
+ * MIT Licensed.
+ */
+Module.register("MMM-CalendarTodayTomorrow", {
+	// Define module defaults
 	defaults: {
-		text: "Hello Funny!",
+		maximumEntries: 10, // Total Maximum Entries
+		maximumNumberOfDays: 2,
+		limitDays: 0, // Limit the number of days shown, 0 = no limit
+		displaySymbol: true,
+		defaultSymbol: "calendar-alt", // Fontawesome Symbol see https://fontawesome.com/cheatsheet?from=io
+		showLocation: false,
+		displayRepeatingCountTitle: false,
+		defaultRepeatingCountTitle: "",
+		maxTitleLength: 25,
+		maxLocationTitleLength: 25,
+		wrapEvents: false, // wrap events to multiple lines breaking at maxTitleLength
+		wrapLocationEvents: false,
+		maxTitleLines: 3,
+		maxEventTitleLines: 3,
 		fetchInterval: 5 * 60 * 1000, // Update every 5 minutes.
+		animationSpeed: 2000,
+		fade: true,
+		urgency: 7,
+		timeFormat: "relative",
+		dateFormat: "MMM Do",
+		dateEndFormat: "LT",
+		fullDayEventDateFormat: "MMM Do",
+		showEnd: false,
+		getRelative: 6,
+		fadePoint: 0.25, // Start on 1/4th of the list.
+		hidePrivate: false,
+		hideOngoing: false,
+		hideTime: false,
+		colored: false,
+		coloredSymbolOnly: false,
+		customEvents: [], // Array of {keyword: "", symbol: "", color: ""} where Keyword is a regexp and symbol/color are to be applied for matched
+		tableClass: "small",
 		calendars: [
-        			{
-        				symbol: "calendar-alt",
-        				url: "https://www.webcal.guru/en-US/download_calendar?calendar_instance_id=142"
-        			}
-        		],
+			{
+				symbol: "calendar-alt",
+				url: "https://www.calendarlabs.com/templates/ical/US-Holidays.ics"
+			}
+		],
+		titleReplace: {
+			"De verjaardag van ": "",
+			"'s birthday": ""
+		},
+		locationTitleReplace: {
+			"street ": ""
+		},
+		broadcastEvents: true,
+		excludedEvents: [],
+		sliceMultiDayEvents: false,
+		broadcastPastEvents: false,
+		nextDaysRelative: false,
+		selfSignedCert: false
 	},
 
 	requiresVersion: "2.1.0",
 
-    // Define required scripts.
-    getScripts: function () {
-        return ["moment.js"];
-    },
+	// Define required scripts.
+	getStyles: function () {
+		return ["calendar.css", "font-awesome.css"];
+	},
 
-    // Define required translations.
-    getTranslations: function () {
-        // The translations for the default modules are defined in the core translation files.
-        // Therefor we can just return false. Otherwise we should have returned a dictionary.
-        // If you're trying to build your own module including translations, check out the documentation.
-        return false;
-    },
+	// Define required scripts.
+	getScripts: function () {
+		return ["moment.js"];
+	},
 
-    // Override start method.
-    start: function () {
-        Log.info("Starting module: " + this.name);
+	// Define required translations.
+	getTranslations: function () {
+		// The translations for the default modules are defined in the core translation files.
+		// Therefore we can just return false. Otherwise we should have returned a dictionary.
+		// If you're trying to build your own module including translations, check out the documentation.
+		return false;
+	},
 
-        this.funnyholidaysToday = "No data",
+	// Override start method.
+	start: function () {
+		Log.info("Starting module: " + this.name);
+
+		this.funnyholidaysToday = "No data",
         this.funnyholidaysTomorrow = "No data";
 
-        // set a timer to refresh the dom just after midnight local time
-        const dt = new Date();
-        dt.setDate(dt.getDate()+1);
-        dt.setHours(0,0,30,0);
-        this.nextRunTime = dt.getTime() - new Date().getTime();
+		// Set locale.
+		moment.updateLocale(config.language, this.getLocaleSpecification(config.timeFormat));
 
-        // Set locale.
-        moment.updateLocale(config.language, this.getLocaleSpecification(config.timeFormat));
+		// clear data holder before start
+		this.calendarData = {};
 
-        // clear data holder before start
-        this.calendarData = {};
+		// indicate no data available yet
+		this.loaded = false;
 
-        // indicate no data available yet
-        this.loaded = false;
+		this.config.calendars.forEach((calendar) => {
+			calendar.url = calendar.url.replace("webcal://", "http://");
 
-        this.config.calendars.forEach((calendar) => {
-            calendar.url = calendar.url.replace("webcal://", "http://");
+			const calendarConfig = {
+				maximumEntries: calendar.maximumEntries,
+				maximumNumberOfDays: calendar.maximumNumberOfDays,
+				broadcastPastEvents: calendar.broadcastPastEvents,
+				selfSignedCert: calendar.selfSignedCert
+			};
 
-            const calendarConfig = {
-                maximumEntries: calendar.maximumEntries,
-                maximumNumberOfDays: calendar.maximumNumberOfDays,
-                broadcastPastEvents: calendar.broadcastPastEvents,
-                selfSignedCert: calendar.selfSignedCert
-            };
+			if (calendar.symbolClass === "undefined" || calendar.symbolClass === null) {
+				calendarConfig.symbolClass = "";
+			}
+			if (calendar.titleClass === "undefined" || calendar.titleClass === null) {
+				calendarConfig.titleClass = "";
+			}
+			if (calendar.timeClass === "undefined" || calendar.timeClass === null) {
+				calendarConfig.timeClass = "";
+			}
 
-            if (calendar.symbolClass === "undefined" || calendar.symbolClass === null) {
-                calendarConfig.symbolClass = "";
-            }
-            if (calendar.titleClass === "undefined" || calendar.titleClass === null) {
-                calendarConfig.titleClass = "";
-            }
-            if (calendar.timeClass === "undefined" || calendar.timeClass === null) {
-                calendarConfig.timeClass = "";
-            }
+			// we check user and password here for backwards compatibility with old configs
+			if (calendar.user && calendar.pass) {
+				Log.warn("Deprecation warning: Please update your calendar authentication configuration.");
+				Log.warn("https://github.com/MichMich/MagicMirror/tree/v2.1.2/modules/default/calendar#calendar-authentication-options");
+				calendar.auth = {
+					user: calendar.user,
+					pass: calendar.pass
+				};
+			}
 
-            // tell helper to start a fetcher for this calendar
-            // fetcher till cycle
-            this.addCalendar(calendar.url, calendar.auth, calendarConfig);
-        });
-    },
-
-
+			// tell helper to start a fetcher for this calendar
+			// fetcher till cycle
+			this.addCalendar(calendar.url, calendar.auth, calendarConfig);
+		});
+	},
 
 	// Override socket notification handler.
 	socketNotificationReceived: function (notification, payload) {
@@ -101,49 +159,52 @@ Module.register("MMM-CalendarTodayTomorrow",{
 		this.updateDom(this.config.animationSpeed);
 	},
 
-
 	// Override dom generator.
-	getDom: function() {
+	getDom: function () {
 
-        events.forEach((event, index) => {
-            if (event.today) {
-                if (isFirst === false) {
-                    this.funnyholidaysToday = "";
-                    this.funnyholidaysToday = this.funnyholidaysToday + " " + event.title;
-                    isFirst = true;
-                } else {
-                    this.funnyholidaysToday = this.funnyholidaysToday + "," + event.title;
-                }
-            } else if (event.tomorrow) {
-                if (isFirstTomorrow === false) {
-                    this.funnyholidaysTomorrow = "";
-                    this.funnyholidaysTomorrow = this.funnyholidaysTomorrow + " " + event.title;
-                    this.funnyholidaysTomorrow = true;
-                } else {
-                    this.funnyholidaysTomorrow = this.funnyholidaysTomorrow + "," + event.title;
-                }
-            }
-        });
+        const events = this.createEventList(true);
+
+        var isFirst = false;
+        var isFirstTomorrow = false;
+        var text = "nodata";
+
+	    events.forEach((event, index) => {
+                    if (event.today) {
+                        if (isFirst === false) {
+                            this.funnyholidaysToday = "";
+                            this.funnyholidaysToday = this.funnyholidaysToday + " " + event.title;
+                            isFirst = true;
+                        } else {
+                            this.funnyholidaysToday = this.funnyholidaysToday + "," + event.title;
+                        }
+                    } else if (event.tomorrow) {
+                        if (isFirstTomorrow === false) {
+                            this.funnyholidaysTomorrow = "";
+                            this.funnyholidaysTomorrow = this.funnyholidaysTomorrow + " " + event.title;
+                            isFirstTomorrow = true;
+                        } else {
+                            this.funnyholidaysTomorrow = this.funnyholidaysTomorrow + "," + event.title;
+                        }
+                    }
+                });
 
         var wrapper = document.createElement("div");
 
-		var message = document.createElement("div");
-		message.className = "small bright";
+        var message = document.createElement("div");
+        message.className = "small bright";
 
-		var text = document.createElement("span");
-		text.innerHTML = this.translate("TODAY") + ": " + this.funnyholidaysToday;
+        var text = document.createElement("span");
+        text.innerHTML = this.translate("TODAY") + ": " + this.funnyholidaysToday;
 
-		message.appendChild(text);
-		wrapper.appendChild(message);
+        message.appendChild(text);
+        wrapper.appendChild(message);
 
-		var subtext = document.createElement("div");
-		subtext.innerHTML = this.translate("TOMORROW") + ": " + this.funnyholidaysTomorrow;
-		subtext.className = "xsmall dimmed";
-		wrapper.appendChild(subtext);
-
+        var subtext = document.createElement("div");
+        subtext.innerHTML = this.translate("TOMORROW") + ": " + this.funnyholidaysTomorrow;
+        subtext.className = "xsmall dimmed";
+        wrapper.appendChild(subtext);
 
         return wrapper;
-
 	},
 
 	/**
@@ -220,82 +281,78 @@ Module.register("MMM-CalendarTodayTomorrow",{
 				}
 				event.url = calendarUrl;
 				event.today = event.startDate >= today && event.startDate < today + 24 * 60 * 60 * 1000;
-
 				event.tomorrow = event.startDate >= today + 24 * 60 * 60 * 1000 && event.startDate < today + 48 * 60 * 60 * 1000;
 
-				events.push(event);
+				/* if sliceMultiDayEvents is set to true, multiday events (events exceeding at least one midnight) are sliced into days,
+				 * otherwise, esp. in dateheaders mode it is not clear how long these events are.
+				 */
+				const maxCount = Math.ceil((event.endDate - 1 - moment(event.startDate, "x").endOf("day").format("x")) / (1000 * 60 * 60 * 24)) + 1;
+				if (this.config.sliceMultiDayEvents && maxCount > 1) {
+					const splitEvents = [];
+					let midnight = moment(event.startDate, "x").clone().startOf("day").add(1, "day").format("x");
+					let count = 1;
+					while (event.endDate > midnight) {
+						const thisEvent = JSON.parse(JSON.stringify(event)); // clone object
+						thisEvent.today = thisEvent.startDate >= today && thisEvent.startDate < today + 24 * 60 * 60 * 1000;
+						thisEvent.endDate = midnight;
+						thisEvent.title += " (" + count + "/" + maxCount + ")";
+						splitEvents.push(thisEvent);
 
+						event.startDate = midnight;
+						count += 1;
+						midnight = moment(midnight, "x").add(1, "day").format("x"); // next day
+					}
+					// Last day
+					event.title += " (" + count + "/" + maxCount + ")";
+					splitEvents.push(event);
 
-
-// 				/* if sliceMultiDayEvents is set to true, multiday events (events exceeding at least one midnight) are sliced into days,
-// 				 * otherwise, esp. in dateheaders mode it is not clear how long these events are.
-// 				 */
-// 				const maxCount = Math.ceil((event.endDate - 1 - moment(event.startDate, "x").endOf("day").format("x")) / (1000 * 60 * 60 * 24)) + 1;
-// 				if (this.config.sliceMultiDayEvents && maxCount > 1) {
-// 					const splitEvents = [];
-// 					let midnight = moment(event.startDate, "x").clone().startOf("day").add(1, "day").format("x");
-// 					let count = 1;
-// 					while (event.endDate > midnight) {
-// 						const thisEvent = JSON.parse(JSON.stringify(event)); // clone object
-// 						thisEvent.today = thisEvent.startDate >= today && thisEvent.startDate < today + 24 * 60 * 60 * 1000;
-// 						thisEvent.endDate = midnight;
-// 						thisEvent.title += " (" + count + "/" + maxCount + ")";
-// 						splitEvents.push(thisEvent);
-//
-// 						event.startDate = midnight;
-// 						count += 1;
-// 						midnight = moment(midnight, "x").add(1, "day").format("x"); // next day
-// 					}
-// 					// Last day
-// 					event.title += " (" + count + "/" + maxCount + ")";
-// 					splitEvents.push(event);
-//
-// 					for (let splitEvent of splitEvents) {
-// 						if (splitEvent.endDate > now && splitEvent.endDate <= future) {
-// 							events.push(splitEvent);
-// 						}
-// 					}
-// 				} else {
-// 					events.push(event);
-// 				}
+					for (let splitEvent of splitEvents) {
+						if (splitEvent.endDate > now && splitEvent.endDate <= future) {
+							events.push(splitEvent);
+						}
+					}
+				} else {
+					events.push(event);
+				}
 			}
 		}
 
-// 		events.sort(function (a, b) {
-// 			return a.startDate - b.startDate;
-// 		});
-//
-// 		if (!limitNumberOfEntries) {
-// 			return events;
-// 		}
+		events.sort(function (a, b) {
+			return a.startDate - b.startDate;
+		});
+
+		if (!limitNumberOfEntries) {
+			return events;
+		}
 
 		// Limit the number of days displayed
 		// If limitDays is set > 0, limit display to that number of days
+		if (this.config.limitDays > 0) {
+			let newEvents = [];
+			let lastDate = today.clone().subtract(1, "days").format("YYYYMMDD");
+			let days = 0;
+			for (const ev of events) {
+				let eventDate = moment(ev.startDate, "x").format("YYYYMMDD");
+				// if date of event is later than lastdate
+				// check if we already are showing max unique days
+				if (eventDate > lastDate) {
+					// if the only entry in the first day is a full day event that day is not counted as unique
+					if (newEvents.length === 1 && days === 1 && newEvents[0].fullDayEvent) {
+						days--;
+					}
+					days++;
+					if (days > this.config.limitDays) {
+						continue;
+					} else {
+						lastDate = eventDate;
+					}
+				}
+				newEvents.push(ev);
+			}
+			events = newEvents;
+		}
 
-        let newEvents = [];
-        let lastDate = today.clone().subtract(1, "days").format("YYYYMMDD");
-        let days = 0;
-        for (const ev of events) {
-            let eventDate = moment(ev.startDate, "x").format("YYYYMMDD");
-            // if date of event is later than lastdate
-            // check if we already are showing max unique days
-            if (eventDate > lastDate) {
-                // if the only entry in the first day is a full day event that day is not counted as unique
-                if (newEvents.length === 1 && days === 1 && newEvents[0].fullDayEvent) {
-                    days--;
-                }
-                days++;
-                if (days > 2) {
-                    continue;
-                } else {
-                    lastDate = eventDate;
-                }
-            }
-            newEvents.push(ev);
-        }
-        events = newEvents;
-
-		return events;
+		return events.slice(0, this.config.maximumEntries);
 	},
 
 	listContainsEvent: function (eventList, event) {
