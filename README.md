@@ -21,7 +21,7 @@ For configuration options, please check the [MagicMirror² documentation](https:
 
 
 
-Get Emojis (No colour)
+##Get Emojis (No colour)
 
 For anyone that has the same issue I was able to fix it by doing the following steps:
 
